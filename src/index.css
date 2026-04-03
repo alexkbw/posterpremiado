@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 15% 8%;
+    --foreground: 45 20% 95%;
+
+    --card: 230 15% 12%;
+    --card-foreground: 45 20% 95%;
+
+    --popover: 230 15% 10%;
+    --popover-foreground: 45 20% 95%;
+
+    --primary: 45 90% 55%;
+    --primary-foreground: 230 15% 8%;
+
+    --secondary: 230 15% 18%;
+    --secondary-foreground: 45 20% 90%;
+
+    --muted: 230 10% 16%;
+    --muted-foreground: 230 10% 55%;
+
+    --accent: 155 60% 45%;
+    --accent-foreground: 230 15% 8%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 45 20% 95%;
+
+    --border: 230 15% 20%;
+    --input: 230 15% 20%;
+    --ring: 45 90% 55%;
+
+    --radius: 0.75rem;
+
+    --gold-glow: 45 90% 65%;
+    --green-glow: 155 60% 55%;
+    --surface-glass: 230 15% 14%;
+
+    --sidebar-background: 230 15% 10%;
+    --sidebar-foreground: 45 20% 90%;
+    --sidebar-primary: 45 90% 55%;
+    --sidebar-primary-foreground: 230 15% 8%;
+    --sidebar-accent: 230 15% 18%;
+    --sidebar-accent-foreground: 45 20% 90%;
+    --sidebar-border: 230 15% 20%;
+    --sidebar-ring: 45 90% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+@layer utilities {
+  .gradient-gold {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--gold-glow)));
+  }
+
+  .gradient-green {
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--green-glow)));
+  }
+
+  .gradient-hero {
+    background: linear-gradient(180deg, hsl(230 15% 8%) 0%, hsl(230 20% 6%) 50%, hsl(230 15% 8%) 100%);
+  }
+
+  .text-gradient-gold {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--gold-glow)));
+  }
+
+  .glass-card {
+    background: hsl(var(--surface-glass) / 0.6);
+    backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 30px -5px hsl(var(--primary) / 0.3);
+  }
+
+  .glow-green {
+    box-shadow: 0 0 30px -5px hsl(var(--accent) / 0.3);
+  }
+}
