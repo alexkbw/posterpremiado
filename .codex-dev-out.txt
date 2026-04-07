@@ -1,0 +1,16 @@
+
+> vite_react_shadcn_ts@0.0.0 dev
+> vite --host 127.0.0.1
+
+Port 8080 is in use, trying another one...
+Port 8081 is in use, trying another one...
+Port 8082 is in use, trying another one...
+
+  [32m[1mVITE[22m v5.4.19[39m  [2mready in [0m[1m754[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m8083[22m/[39m
+[2m22:18:54[22m [36m[1m[vite][22m[39m [32m.env.local changed, restarting server...[39m
+[2m22:18:54[22m [36m[1m[vite][22m[39m [32m.env.local changed, restarting server...[39m
+[2m22:18:55[22m [36m[1m[vite][22m[39m server restarted.
+[2m22:21:59[22m [36m[1m[vite][22m[39m [32m.env.local changed, restarting server...[39m
+[2m22:21:59[22m [36m[1m[vite][22m[39m server restarted.

@@ -256,10 +256,10 @@ export default function AuthPage() {
         <div className="mb-8 text-center">
           <div className="mb-4 inline-flex items-center gap-2">
             <Trophy className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-display font-bold text-gradient-gold">PremioSemanal</h1>
+            <h1 className="text-3xl font-display font-bold text-gradient-gold">PosterPremiado</h1>
           </div>
           <p className="text-muted-foreground">
-            {isLogin ? "Acesse sua conta" : "Crie sua conta e concorra"}
+            {isLogin ? "Acesse sua conta" : "Crie sua conta para comprar o poster"}
           </p>
         </div>
 

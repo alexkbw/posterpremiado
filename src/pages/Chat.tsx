@@ -694,7 +694,10 @@ export default function Chat() {
                               {isSelected ? <Check className="h-4 w-4 text-primary" /> : null}
                             </div>
                             <p className="mt-3 text-sm font-semibold">{preset.label}</p>
-                            <p className="text-xs text-muted-foreground">Avatar do participante</p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">{preset.description}</p>
+                            <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                              [{preset.tag}]
+                            </p>
                           </button>
                         );
                       })}

@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Settings2, Trophy } from "lucide-react";
+import { Calendar, Hash, Landmark } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
-import { formatDrawDateLabel } from "@/lib/payments";
+import { formatCurrency, formatDrawDateLabel } from "@/lib/payments";
+import { getDrawContestCode } from "@/lib/posters";
 
 type Draw = {
+  contest_code?: string | null;
   draw_date: string;
   id: string;
-  prize_per_winner?: number | null;
   prize_pool?: number | null;
   promotion_id?: string | null;
   sequence_number?: number | null;
@@ -16,13 +17,19 @@ type Draw = {
 };
 
 type Promotion = {
+  contest_code?: string | null;
   id: string;
   title: string;
 };
 
+function formatContestLabel(contestCode?: string | null) {
+  const normalized = contestCode?.trim();
+  return normalized ? `Concurso ${normalized}` : "Concurso em aberto";
+}
+
 export default function NextDrawSection() {
   const [draw, setDraw] = useState<Draw | null>(null);
-  const [promotion, setPromotion] = useState<Promotion | null>(null);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -41,18 +48,20 @@ export default function NextDrawSection() {
         const nextDraw = data[0] as Draw;
         setDraw(nextDraw);
 
-        if (!nextDraw.promotion_id) {
+        const contestCode = getDrawContestCode(nextDraw);
+
+        if (!contestCode) {
           return;
         }
 
         const promotionResponse = await supabase
           .from("promotions")
-          .select("id, title")
-          .eq("id", nextDraw.promotion_id)
-          .maybeSingle();
+          .select("id, title, contest_code")
+          .eq("contest_code", contestCode)
+          .order("title", { ascending: true });
 
         if (active && promotionResponse.data) {
-          setPromotion(promotionResponse.data as Promotion);
+          setPromotions((promotionResponse.data ?? []) as Promotion[]);
         }
       });
 
@@ -70,8 +79,8 @@ export default function NextDrawSection() {
           viewport={{ once: true }}
           whileInView={{ opacity: 1, y: 0 }}
         >
-          <h2 className="mb-8 text-3xl font-bold font-display sm:text-4xl">
-            Proximo <span className="text-gradient-gold">Sorteio</span>
+          <h2 className="mb-8 text-3xl font-display font-bold sm:text-4xl">
+            Proximo <span className="text-gradient-gold">concurso</span>
           </h2>
 
           <div className="glass-card rounded-2xl p-8">
@@ -83,32 +92,41 @@ export default function NextDrawSection() {
                 </div>
 
                 <p className="text-sm uppercase tracking-[0.25em] text-muted-foreground">
-                  {promotion?.title ?? "Promocao vinculada"} {draw.sequence_number ? `• ${draw.sequence_number}º sorteio` : ""}
+                  {formatContestLabel(getDrawContestCode(draw))}
+                </p>
+
+                <p className="text-sm text-muted-foreground">
+                  {promotions.length
+                    ? `${promotions.length} poster(es) participando: ${promotions
+                        .slice(0, 2)
+                        .map((promotion) => promotion.title)
+                        .join(", ")}${promotions.length > 2 ? ` +${promotions.length - 2}` : ""}`
+                    : "Os posters vinculados a este concurso aparecem aqui."}
                 </p>
 
                 <div className="mt-6 grid grid-cols-2 gap-4">
                   <div className="rounded-xl bg-secondary/50 p-4">
-                    <Trophy className="mx-auto mb-2 h-6 w-6 text-primary" />
-                    <p className="text-2xl font-bold font-display text-primary">
-                      {draw.prize_per_winner
-                        ? `R$ ${Number(draw.prize_per_winner).toFixed(2)}`
-                        : "3 ganhadores"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Cada ganhador recebe</p>
+                    <Landmark className="mx-auto mb-2 h-6 w-6 text-primary" />
+                    <p className="text-2xl font-display font-bold text-primary">Federal</p>
+                    <p className="text-xs text-muted-foreground">4 ultimos digitos do 1o premio</p>
                   </div>
                   <div className="rounded-xl bg-secondary/50 p-4">
-                    <Settings2 className="mx-auto mb-2 h-6 w-6 text-accent" />
-                    <p className="text-2xl font-bold font-display text-accent">Manual</p>
-                    <p className="text-xs text-muted-foreground">Execucao e live no backoffice</p>
+                    <Hash className="mx-auto mb-2 h-6 w-6 text-accent" />
+                    <p className="text-2xl font-display font-bold text-accent">
+                      {draw.prize_pool ? formatCurrency(Number(draw.prize_pool)) : "Ao vivo"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {draw.prize_pool ? "Premio estimado do concurso" : "Resultado consolidado no backoffice"}
+                    </p>
                   </div>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <Trophy className="mx-auto h-10 w-10 text-primary" />
-                <p className="text-lg font-semibold font-display">Em breve</p>
+                <Landmark className="mx-auto h-10 w-10 text-primary" />
+                <p className="text-lg font-display font-semibold">Em breve</p>
                 <p className="text-sm text-muted-foreground">
-                  O proximo sorteio sera anunciado assim que o backoffice vincular uma promocao a uma nova rodada.
+                  O proximo concurso sera anunciado assim que o backoffice agendar um novo sorteio compartilhado.
                 </p>
               </div>
             )}

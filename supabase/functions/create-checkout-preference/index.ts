@@ -14,9 +14,13 @@ type CreateCheckoutPreferenceBody = {
 
 type PromotionRow = {
   active?: boolean | null;
+  contest_code?: string | null;
   entry_amount?: number | null;
+  file_type?: string | null;
+  file_url?: string | null;
   id: string;
   is_active?: boolean | null;
+  number_package_size?: number | null;
   title: string;
 };
 
@@ -44,8 +48,10 @@ type PostgrestErrorLike = {
 };
 
 const DEFAULT_AMOUNT = 10;
+const DEFAULT_PROMOTION_PACKAGE_SIZE = 10;
+const MAX_PROMOTION_PACKAGE_SIZE = 9999;
 const MERCADO_PAGO_API_URL = "https://api.mercadopago.com";
-const ACTIVE_PAYMENT_STATUSES = ["completed", "paid", "pending"];
+const PENDING_PAYMENT_STATUS = "pending";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -125,6 +131,27 @@ function isPromotionActive(promotion: PromotionRow | null) {
   return true;
 }
 
+function normalizePackageSize(value?: number | null) {
+  const normalized = Number(value ?? DEFAULT_PROMOTION_PACKAGE_SIZE);
+
+  if (!Number.isInteger(normalized) || normalized < 1) {
+    return DEFAULT_PROMOTION_PACKAGE_SIZE;
+  }
+
+  return Math.min(normalized, MAX_PROMOTION_PACKAGE_SIZE);
+}
+
+function normalizeContestCode(value?: string | null, fallback?: string | null) {
+  const normalized = value?.trim();
+
+  if (normalized) {
+    return normalized;
+  }
+
+  const normalizedFallback = fallback?.trim();
+  return normalizedFallback || "";
+}
+
 async function findPromotion(
   adminClient: ReturnType<typeof createClient>,
   preferredPromotionId?: string | null,
@@ -142,25 +169,25 @@ async function findPromotion(
     () =>
       adminClient
         .from("promotions")
-        .select("id, title, entry_amount, is_active")
+        .select("id, title, contest_code, entry_amount, is_active, file_url, file_type, number_package_size")
         .eq("id", preferredPromotionId)
         .maybeSingle(),
     () =>
       adminClient
         .from("promotions")
-        .select("id, title, entry_amount, active")
+        .select("id, title, contest_code, entry_amount, active, file_url, file_type, number_package_size")
         .eq("id", preferredPromotionId)
         .maybeSingle(),
     () =>
       adminClient
         .from("promotions")
-        .select("id, title, is_active")
+        .select("id, title, contest_code, is_active, file_url, file_type, number_package_size")
         .eq("id", preferredPromotionId)
         .maybeSingle(),
     () =>
       adminClient
         .from("promotions")
-        .select("id, title, active")
+        .select("id, title, contest_code, active, file_url, file_type, number_package_size")
         .eq("id", preferredPromotionId)
         .maybeSingle(),
   ];
@@ -184,7 +211,7 @@ async function findPromotion(
   return { data: null, error: lastError };
 }
 
-async function findExistingPayment(
+async function findPendingPayment(
   adminClient: ReturnType<typeof createClient>,
   promotionId: string,
   userId: string,
@@ -196,7 +223,9 @@ async function findExistingPayment(
         .select("id, status, transaction_id")
         .eq("user_id", userId)
         .eq("promotion_id", promotionId)
-        .in("status", ACTIVE_PAYMENT_STATUSES)
+        .eq("status", PENDING_PAYMENT_STATUS)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle(),
   ];
 
@@ -222,12 +251,14 @@ async function findExistingPayment(
 async function insertPendingPayment(
   adminClient: ReturnType<typeof createClient>,
   amount: number,
+  contestCode: string,
   paymentRecordId: string,
   promotionId: string,
   userId: string,
 ) {
   const payload = {
     amount,
+    contest_code: contestCode,
     id: paymentRecordId,
     payment_date: new Date().toISOString(),
     payment_method: "mercado_pago_checkout_pro",
@@ -336,26 +367,34 @@ serve(async (request) => {
     return jsonResponse({ error: "Esta promocao nao esta disponivel para compra agora." }, 409);
   }
 
+  if (!promotion.file_url) {
+    return jsonResponse({ error: "Este poster ainda nao possui arquivo PDF liberado no backoffice." }, 409);
+  }
+
   const promotionAmount = Number(promotion.entry_amount ?? DEFAULT_AMOUNT);
+  const contestCode = normalizeContestCode(promotion.contest_code, promotion.id);
+  const numberPackageSize = normalizePackageSize(promotion.number_package_size);
   const normalizedAmount =
     Number.isFinite(promotionAmount) && promotionAmount > 0
       ? Number(promotionAmount.toFixed(2))
       : DEFAULT_AMOUNT;
-  const title = body?.title?.trim() || promotion.title || "Pagamento da promocao";
+  const title = body?.title?.trim() || promotion.title || "Poster digital";
 
-  const { data: existingPayment, error: existingPaymentError } = await findExistingPayment(adminClient, promotion.id, user.id);
+  const { data: pendingPayment, error: pendingPaymentError } = await findPendingPayment(
+    adminClient,
+    promotion.id,
+    user.id,
+  );
 
-  if (existingPaymentError) {
+  if (pendingPaymentError) {
     return jsonResponse({ error: "Nao foi possivel validar a compra atual da promocao." }, 500);
   }
 
-  if (existingPayment) {
-    const existingPaymentStatus = (existingPayment.status ?? "").toLowerCase();
-    const canDiscardPreviousAttempt =
-      existingPaymentStatus === "pending" && !existingPayment.transaction_id;
+  if (pendingPayment) {
+    const canDiscardPreviousAttempt = !pendingPayment.transaction_id;
 
     if (canDiscardPreviousAttempt) {
-      const recycleError = await updatePaymentWithFallback(adminClient, existingPayment.id, [
+      const recycleError = await updatePaymentWithFallback(adminClient, pendingPayment.id, [
         {
           payment_date: new Date().toISOString(),
           status: "failed",
@@ -369,7 +408,13 @@ serve(async (request) => {
         return jsonResponse({ error: "Nao foi possivel liberar uma nova tentativa de checkout." }, 500);
       }
     } else {
-      return jsonResponse({ error: "Voce ja possui um pagamento ativo para esta promocao." }, 409);
+      return jsonResponse(
+        {
+          error:
+            "Existe um pagamento desta promocao ainda em analise. Aguarde a atualizacao dele antes de iniciar outro checkout.",
+        },
+        409,
+      );
     }
   }
 
@@ -377,19 +422,28 @@ serve(async (request) => {
   const { error: insertError } = await insertPendingPayment(
     adminClient,
     normalizedAmount,
+    contestCode,
     paymentRecordId,
     promotion.id,
     user.id,
   );
 
   if (insertError) {
-    return jsonResponse({ error: "Nao foi possivel registrar o pagamento pendente." }, 500);
+    console.error("Failed to insert pending payment", insertError);
+    return jsonResponse(
+      {
+        details: insertError.details ?? insertError.hint ?? insertError.message ?? null,
+        error: "Nao foi possivel registrar o pagamento pendente.",
+      },
+      500,
+    );
   }
 
   const siteUrl = getSecureSiteUrl(body?.originUrl);
   const webhookUrl = getFunctionUrl("mercado-pago-webhook");
   const description =
-    body?.description?.trim() || `Participacao na promocao ${promotion.title}`;
+    body?.description?.trim() ||
+    `Poster digital ${promotion.title} com ${numberPackageSize} numeros promocionais.`;
 
   const preferencePayload: Record<string, unknown> = {
     external_reference: paymentRecordId,
@@ -404,6 +458,7 @@ serve(async (request) => {
       },
     ],
     metadata: {
+      contest_code: contestCode,
       payment_record_id: paymentRecordId,
       promotion_id: promotion.id,
       promotion_title: promotion.title,

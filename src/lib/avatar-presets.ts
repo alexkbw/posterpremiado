@@ -12,20 +12,82 @@ import nervosoAvatar from "@/assets/avatar/nervoso_256.png";
 export type AvatarPreset = {
   id: string;
   label: string;
+  description: string;
+  tag: string;
   src: string;
 };
 
 export const AVATAR_PRESETS: AvatarPreset[] = [
-  { id: "female-1", label: "Classico claro", src: femPadraoAvatar },
-  { id: "female-2", label: "Cabelo longo", src: cabeloLongoAvatar },
-  { id: "female-3", label: "Encaracolado", src: cabeloEncaracoladoAvatar },
-  { id: "female-4", label: "Sorridente", src: caraFelizAvatar },
-  { id: "male-1", label: "Classico", src: mascPadraoAvatar },
-  { id: "male-2", label: "Jovem", src: garotoAvatar },
-  { id: "male-3", label: "Feliz", src: homemFelizAvatar },
-  { id: "male-4", label: "Careca", src: carecaAvatar },
-  { id: "avatar-9", label: "Estiloso", src: estilosoAvatar },
-  { id: "avatar-10", label: "Expressivo", src: nervosoAvatar },
+  {
+    id: "female-1",
+    label: "Clássico Claro",
+    description: "Simples e neutro, sem distrações.",
+    tag: "Neutro • Profissional",
+    src: femPadraoAvatar,
+  },
+  {
+    id: "female-2",
+    label: "Cabelo Longo",
+    description: "Visual moderno com presença leve e elegante.",
+    tag: "Estilo • Casual",
+    src: cabeloLongoAvatar,
+  },
+  {
+    id: "female-3",
+    label: "Encaracolado",
+    description: "Cheio de personalidade e identidade marcante.",
+    tag: "Estilo • Forte",
+    src: cabeloEncaracoladoAvatar,
+  },
+  {
+    id: "female-4",
+    label: "Sorridente",
+    description: "Transmite simpatia e acessibilidade.",
+    tag: "Amigável",
+    src: caraFelizAvatar,
+  },
+  {
+    id: "male-1",
+    label: "Clássico",
+    description: "Padrão discreto para qualquer contexto.",
+    tag: "Neutro",
+    src: mascPadraoAvatar,
+  },
+  {
+    id: "male-2",
+    label: "Jovem",
+    description: "Visual casual e moderno, mais informal.",
+    tag: "Jovem • Casual",
+    src: garotoAvatar,
+  },
+  {
+    id: "male-3",
+    label: "Feliz",
+    description: "Energia positiva e descontraída.",
+    tag: "Leve • Positivo",
+    src: homemFelizAvatar,
+  },
+  {
+    id: "male-4",
+    label: "Careca",
+    description: "Visual direto e objetivo, sem excessos.",
+    tag: "Minimalista • Maduro",
+    src: carecaAvatar,
+  },
+  {
+    id: "avatar-9",
+    label: "Estiloso",
+    description: "Com atitude e confiança, chama atenção sem exagero.",
+    tag: "Estilo • Confiante",
+    src: estilosoAvatar,
+  },
+  {
+    id: "avatar-10",
+    label: "Expressivo",
+    description: "Criativo e fora do padrão - mais divertido que sério.",
+    tag: "Criativo • Divertido",
+    src: nervosoAvatar,
+  },
 ];
 
 export function getAvatarPreset(id?: string | null) {

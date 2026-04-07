@@ -1,8 +1,9 @@
 import { format, getISOWeek, getISOWeekYear } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-export const WEEKLY_PAYMENT_AMOUNT = 10;
-export const DEFAULT_PROMOTION_AMOUNT = WEEKLY_PAYMENT_AMOUNT;
+export const BASE_POSTER_PRICE = 10;
+export const WEEKLY_PAYMENT_AMOUNT = BASE_POSTER_PRICE;
+export const DEFAULT_PROMOTION_AMOUNT = BASE_POSTER_PRICE;
 
 export type NormalizedPaymentStatus = "failed" | "paid" | "pending";
 
@@ -20,7 +21,7 @@ const PAYMENT_STATUS_META: Record<
     toneClassName: "border-rose-400/30 bg-rose-500/10 text-rose-200",
   },
   paid: {
-    description: "Pagamento confirmado para este sorteio.",
+    description: "Pagamento confirmado. O poster e os numeros promocionais foram liberados.",
     label: "Pago",
     toneClassName: "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
   },
@@ -105,7 +106,7 @@ export function getPaymentReferenceLabel(
   }
 
   if (draw?.draw_date) {
-    return `Sorteio de ${formatDrawDateLabel(draw.draw_date)}`;
+    return `Rodada de ${formatDrawDateLabel(draw.draw_date)}`;
   }
 
   if (payment.week_reference) {
@@ -116,5 +117,5 @@ export function getPaymentReferenceLabel(
     return `Sorteio ${payment.draw_id.slice(0, 8)}`;
   }
 
-  return "Pagamento semanal";
+  return "Compra do poster";
 }

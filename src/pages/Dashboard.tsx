@@ -2,16 +2,17 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
-  Calendar,
+  CalendarDays,
   CreditCard,
-  History,
+  Download,
+  FileText,
+  Hash,
   ImageIcon,
   Loader2,
   MessageCircle,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
-  Ticket,
-  Trophy,
 } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -33,34 +34,47 @@ import {
   normalizePaymentStatus,
 } from "@/lib/payments";
 import { getDefaultSelfParticipantControls, loadSelfParticipantControls } from "@/lib/participant-controls";
+import {
+  buildPosterDownloadUrl,
+  formatTicketNumber,
+  getDrawContestCode,
+  getPaymentContestCode,
+  getPromotionContestCode,
+  normalizePackageSize,
+} from "@/lib/posters";
 import { getPublicAppOrigin, hasSecurePublicAppOrigin } from "@/lib/public-app-url";
 
 type Promotion = {
   active?: boolean | null;
+  contest_code?: string | null;
   created_at?: string | null;
   description?: string | null;
   end_date?: string | null;
   entry_amount?: number | null;
+  file_type?: string | null;
+  file_url?: string | null;
   id: string;
   image_url?: string | null;
   is_active?: boolean | null;
+  number_package_size?: number | null;
   start_date?: string | null;
   title: string;
 };
 
 type AppDraw = {
+  contest_code?: string | null;
   created_at?: string | null;
   draw_date: string;
-  executed_at?: string | null;
   id: string;
+  official_winning_number?: number | null;
   promotion_id?: string | null;
   sequence_number?: number | null;
   status: string;
-  winner_count?: number | null;
 };
 
 type AppPayment = {
   amount: number;
+  contest_code?: string | null;
   created_at?: string | null;
   draw_id?: string | null;
   id: string;
@@ -73,7 +87,33 @@ type AppPayment = {
   week_reference?: string | null;
 };
 
+type PromotionNumberRecord = {
+  contest_code?: string | null;
+  created_at?: string | null;
+  id: string;
+  payment_id: string;
+  promotion_id: string;
+  ticket_number: number;
+  user_id: string;
+};
+
 type PromotionPaymentState = "failed" | "paid" | "pending" | "unpaid";
+
+function getTable(table: string) {
+  return (supabase as unknown as { from: (tableName: string) => any }).from(table);
+}
+
+function isSchemaDriftError(error: { details?: string; hint?: string; message?: string } | null) {
+  const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`.toLowerCase();
+
+  return (
+    message.includes("column") ||
+    message.includes("relation") ||
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    message.includes("could not find")
+  );
+}
 
 function isPromotionActive(promotion: Promotion) {
   if (typeof promotion.is_active === "boolean") {
@@ -97,29 +137,17 @@ function getPromotionAmount(promotion?: Promotion | null) {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_PROMOTION_AMOUNT;
 }
 
-function getHighlightedPayment(payments: AppPayment[]) {
-  return (
-    payments.find((payment) => normalizePaymentStatus(payment.status) === "paid") ??
-    payments.find((payment) => normalizePaymentStatus(payment.status) === "pending") ??
-    payments[0] ??
-    null
-  );
-}
-
-function getDrawSequenceLabel(draw?: AppDraw | null) {
+function getCampaignDrawLabel(draw?: AppDraw | null) {
   if (!draw?.sequence_number) {
-    return "Sorteio da promoção";
+    return "Sorteio do concurso";
   }
 
-  return `${draw.sequence_number}º sorteio da promoção`;
+  return `${draw.sequence_number}o sorteio do concurso`;
 }
 
-function getPromotionPaymentState(payment?: AppPayment | null): PromotionPaymentState {
-  if (!payment) {
-    return "unpaid";
-  }
-
-  return normalizePaymentStatus(payment.status);
+function formatContestLabel(contestCode?: string | null) {
+  const normalized = contestCode?.trim();
+  return normalized ? `Concurso ${normalized}` : "Concurso em aberto";
 }
 
 export default function Dashboard() {
@@ -206,6 +234,31 @@ export default function Dashboard() {
   });
 
   const {
+    data: promotionNumbers = [],
+    isFetching: isFetchingNumbers,
+    isLoading: numbersLoading,
+    refetch: refetchNumbers,
+  } = useQuery({
+    enabled: Boolean(user),
+    queryFn: async () => {
+      const { data, error } = await getTable("promotion_numbers")
+        .select("*")
+        .order("ticket_number", { ascending: true });
+
+      if (error) {
+        if (isSchemaDriftError(error)) {
+          return [] as PromotionNumberRecord[];
+        }
+
+        throw error;
+      }
+
+      return (data ?? []) as PromotionNumberRecord[];
+    },
+    queryKey: ["promotion-numbers", user?.id],
+  });
+
+  const {
     data: participantControls = getDefaultSelfParticipantControls(),
     isFetching: isFetchingParticipantControls,
     refetch: refetchParticipantControls,
@@ -223,18 +276,20 @@ export default function Dashboard() {
     return new Map(draws.map((draw) => [draw.id, draw]));
   }, [draws]);
 
-  const drawsByPromotionId = useMemo(() => {
+  const drawsByContestCode = useMemo(() => {
     const map = new Map<string, AppDraw[]>();
 
     for (const draw of draws) {
-      if (!draw.promotion_id) {
+      const contestCode = getDrawContestCode(draw);
+
+      if (!contestCode) {
         continue;
       }
 
-      const current = map.get(draw.promotion_id) ?? [];
+      const current = map.get(contestCode) ?? [];
       current.push(draw);
       current.sort((left, right) => new Date(left.draw_date).getTime() - new Date(right.draw_date).getTime());
-      map.set(draw.promotion_id, current);
+      map.set(contestCode, current);
     }
 
     return map;
@@ -256,20 +311,66 @@ export default function Dashboard() {
     return map;
   }, [payments]);
 
+  const numbersByPaymentId = useMemo(() => {
+    const map = new Map<string, PromotionNumberRecord[]>();
+
+    for (const promotionNumber of promotionNumbers) {
+      const current = map.get(promotionNumber.payment_id) ?? [];
+      current.push(promotionNumber);
+      map.set(promotionNumber.payment_id, current);
+    }
+
+    for (const current of map.values()) {
+      current.sort((left, right) => left.ticket_number - right.ticket_number);
+    }
+
+    return map;
+  }, [promotionNumbers]);
+
   const nextOverallDraw = useMemo(() => {
-    return draws.find((draw) => isUpcomingDraw(draw) && Boolean(draw.promotion_id)) ?? null;
+    return draws.find((draw) => isUpcomingDraw(draw) && Boolean(getDrawContestCode(draw))) ?? null;
   }, [draws]);
 
-  const paidPromotionsCount = useMemo(() => {
-    return promotions.filter((promotion) => {
-      const payment = getHighlightedPayment(paymentsByPromotionId.get(promotion.id) ?? []);
-      return normalizePaymentStatus(payment?.status) === "paid";
-    }).length;
-  }, [paymentsByPromotionId, promotions]);
+  const approvedPayments = useMemo(() => {
+    return payments.filter((payment) => normalizePaymentStatus(payment.status) === "paid");
+  }, [payments]);
+
+  const downloadsReady = useMemo(() => {
+    return approvedPayments
+      .map((payment) => {
+        const promotion = payment.promotion_id ? promotionById.get(payment.promotion_id) ?? null : null;
+
+        if (!promotion?.file_url) {
+          return null;
+        }
+
+        return {
+          contestCode: getPaymentContestCode(payment, promotion),
+          downloadUrl: buildPosterDownloadUrl(promotion.file_url),
+          numbers: numbersByPaymentId.get(payment.id) ?? [],
+          payment,
+          promotion,
+        };
+      })
+      .filter(Boolean) as Array<{
+      contestCode: string;
+      downloadUrl: string;
+      numbers: PromotionNumberRecord[];
+      payment: AppPayment;
+      promotion: Promotion;
+    }>;
+  }, [approvedPayments, numbersByPaymentId, promotionById]);
+
+  const isRefreshing =
+    isFetchingPromotions ||
+    isFetchingDraws ||
+    isFetchingPayments ||
+    isFetchingNumbers ||
+    isFetchingParticipantControls;
 
   async function handleStartCheckout(promotion: Promotion) {
     if (!session || !user) {
-      toast.error("Entre na sua conta para comprar a promocao.");
+      toast.error("Entre na sua conta para comprar o poster.");
       return;
     }
 
@@ -307,7 +408,13 @@ export default function Dashboard() {
       toast.error(
         error instanceof Error ? error.message : "Nao foi possivel iniciar o Checkout Pro agora.",
       );
-      await Promise.all([refetchPromotions(), refetchDraws(), refetchPayments(), refetchParticipantControls()]);
+      await Promise.all([
+        refetchPromotions(),
+        refetchDraws(),
+        refetchPayments(),
+        refetchNumbers(),
+        refetchParticipantControls(),
+      ]);
     } finally {
       setIsStartingCheckoutFor(null);
     }
@@ -334,41 +441,41 @@ export default function Dashboard() {
             Ola, <span className="text-gradient-gold">{displayName}</span>
           </h1>
           <p className="mb-8 max-w-3xl text-muted-foreground">
-            Aqui voce compra as promocoes criadas no backoffice. Quando a equipe abrir um sorteio para a promocao,
-            sua entrada entra na fila oficial e participa da apuracao com 3 vencedores.
+            Seu painel agora organiza tudo em torno do poster digital: compra aprovada libera o PDF e os numeros
+            promocionais vinculados ao sorteio do concurso.
           </p>
 
           <div className="mb-6 grid gap-4 lg:grid-cols-3">
             <div className="glass-card rounded-[1.75rem] border border-primary/15 p-6">
-              <Ticket className="mb-3 h-8 w-8 text-primary" />
-              <p className="text-sm uppercase tracking-[0.24em] text-primary/70">Promocoes ativas</p>
-              <p className="mt-3 text-3xl font-display font-bold">{promotions.length}</p>
+              <Download className="mb-3 h-8 w-8 text-primary" />
+              <p className="text-sm uppercase tracking-[0.24em] text-primary/70">Downloads liberados</p>
+              <p className="mt-3 text-3xl font-display font-bold">{downloadsReady.length}</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Cada promocao pode virar ate 3 sorteios executados manualmente no backoffice.
+                Posters aprovados e prontos para baixar com um clique.
               </p>
             </div>
 
             <div className="glass-card rounded-[1.75rem] border border-white/10 p-6">
-              <Trophy className="mb-3 h-8 w-8 text-accent" />
-              <p className="text-sm uppercase tracking-[0.24em] text-accent/80">Proximo sorteio</p>
+              <Hash className="mb-3 h-8 w-8 text-accent" />
+              <p className="text-sm uppercase tracking-[0.24em] text-accent/80">Numeros recebidos</p>
               <p className="mt-3 text-xl font-display font-semibold">
-                {nextOverallDraw?.promotion_id
-                  ? promotionById.get(nextOverallDraw.promotion_id)?.title ?? "Promocao vinculada"
-                  : "Aguardando criacao"}
+                {promotionNumbers.length}
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Cada numero e unico dentro do concurso e sai do pacote definido no backoffice.
+              </p>
+            </div>
+
+            <div className="glass-card rounded-[1.75rem] border border-white/10 p-6">
+              <CalendarDays className="mb-3 h-8 w-8 text-primary" />
+              <p className="text-sm uppercase tracking-[0.24em] text-primary/70">Proxima rodada</p>
+              <p className="mt-3 text-xl font-display font-semibold">
+                {nextOverallDraw ? formatContestLabel(getDrawContestCode(nextOverallDraw)) : "Aguardando agenda"}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {nextOverallDraw
-                  ? `${getDrawSequenceLabel(nextOverallDraw)} em ${formatDrawDateLabel(nextOverallDraw.draw_date)}`
-                  : "O backoffice ainda nao abriu um sorteio para as promocoes atuais."}
-              </p>
-            </div>
-
-            <div className="glass-card rounded-[1.75rem] border border-white/10 p-6">
-              <Sparkles className="mb-3 h-8 w-8 text-primary" />
-              <p className="text-sm uppercase tracking-[0.24em] text-primary/70">Entradas confirmadas</p>
-              <p className="mt-3 text-3xl font-display font-bold">{paidPromotionsCount}</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Pagamentos aprovados viram vaga valida na fila da promocao correspondente.
+                  ? `${getCampaignDrawLabel(nextOverallDraw)} em ${formatDrawDateLabel(nextOverallDraw.draw_date)}`
+                  : "Assim que a equipe abrir um sorteio para um concurso, ele aparece aqui."}
               </p>
             </div>
           </div>
@@ -389,69 +496,104 @@ export default function Dashboard() {
           <section className="glass-card rounded-[2rem] p-6">
             <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-display font-semibold">Promocoes disponiveis</h2>
+                <h2 className="text-2xl font-display font-semibold">Posters disponiveis</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  O pagamento aprovado trava sua entrada nessa promocao e evita compras duplicadas.
+                  O pagamento aprovado libera o PDF e o pacote de numeros da promocao, sempre vinculado ao concurso.
                 </p>
               </div>
 
               <Button
-                disabled={isFetchingPromotions || isFetchingDraws || isFetchingPayments || isFetchingParticipantControls}
-                onClick={() => void Promise.all([refetchPromotions(), refetchDraws(), refetchPayments(), refetchParticipantControls()])}
+                disabled={isRefreshing}
+                onClick={() =>
+                  void Promise.all([
+                    refetchPromotions(),
+                    refetchDraws(),
+                    refetchPayments(),
+                    refetchNumbers(),
+                    refetchParticipantControls(),
+                  ])
+                }
                 size="sm"
                 variant="glass"
               >
-                <RefreshCw className={isFetchingPromotions || isFetchingDraws || isFetchingPayments || isFetchingParticipantControls ? "animate-spin" : ""} />
+                <RefreshCw className={isRefreshing ? "animate-spin" : ""} />
                 Atualizar
               </Button>
             </div>
 
-            {promotionsLoading ? (
+            {promotionsLoading || drawsLoading ? (
               <div className="flex items-center gap-3 rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                Carregando promocoes...
+                Carregando posters e rodadas...
               </div>
             ) : promotions.length ? (
               <div className="grid gap-4 lg:grid-cols-2">
                 {promotions.map((promotion) => {
-                  const promotionDraws = drawsByPromotionId.get(promotion.id) ?? [];
+                  const contestCode = getPromotionContestCode(promotion);
+                  const promotionDraws = drawsByContestCode.get(contestCode) ?? [];
+                  const promotionPayments = paymentsByPromotionId.get(promotion.id) ?? [];
                   const upcomingDraw = promotionDraws.find(isUpcomingDraw) ?? null;
-                  const completedDraws = promotionDraws.filter((draw) => draw.status.toLowerCase() === "drawn").length;
-                  const highlightedPayment = getHighlightedPayment(paymentsByPromotionId.get(promotion.id) ?? []);
-                  const paymentState = getPromotionPaymentState(highlightedPayment);
-                  const hasMercadoPagoTransaction = Boolean(highlightedPayment?.transaction_id);
+                  const latestPaidPayment =
+                    promotionPayments.find((payment) => normalizePaymentStatus(payment.status) === "paid") ?? null;
+                  const latestAnalyzingPayment =
+                    promotionPayments.find(
+                      (payment) =>
+                        normalizePaymentStatus(payment.status) === "pending" && Boolean(payment.transaction_id),
+                    ) ?? null;
+                  const latestRetryablePayment =
+                    promotionPayments.find(
+                      (payment) =>
+                        normalizePaymentStatus(payment.status) === "pending" && !payment.transaction_id,
+                    ) ?? null;
+                  const latestFailedPayment =
+                    promotionPayments.find((payment) => normalizePaymentStatus(payment.status) === "failed") ?? null;
+                  const highlightedPayment =
+                    latestPaidPayment ?? latestRetryablePayment ?? latestFailedPayment ?? promotionPayments[0] ?? null;
+                  const paymentState: PromotionPaymentState = highlightedPayment
+                    ? normalizePaymentStatus(highlightedPayment.status)
+                    : "unpaid";
+                  const successfulPurchasesCount = promotionPayments.filter(
+                    (payment) => normalizePaymentStatus(payment.status) === "paid",
+                  ).length;
+                  const hasMercadoPagoTransaction = Boolean(latestAnalyzingPayment?.transaction_id);
                   const paymentMeta =
-                    highlightedPayment && paymentState !== "unpaid"
-                      ? getPaymentStatusMeta(highlightedPayment.status)
-                      : null;
-                  const promotionBadge = highlightedPayment
-                    ? paymentState === "pending" && !hasMercadoPagoTransaction
+                    latestAnalyzingPayment
+                      ? getPaymentStatusMeta(latestAnalyzingPayment.status)
+                      : highlightedPayment && paymentState !== "unpaid"
+                        ? getPaymentStatusMeta(highlightedPayment.status)
+                        : null;
+                  const packageSize = normalizePackageSize(promotion.number_package_size);
+                  const assignedNumbers = latestPaidPayment ? numbersByPaymentId.get(latestPaidPayment.id) ?? [] : [];
+                  const downloadUrl =
+                    latestPaidPayment && promotion.file_url ? buildPosterDownloadUrl(promotion.file_url) : null;
+                  const promotionBadge = latestAnalyzingPayment
+                    ? {
+                        label: "Pagamento em analise",
+                        toneClassName: paymentMeta?.toneClassName ?? "border-amber-400/30 bg-amber-500/10 text-amber-200",
+                      }
+                    : latestRetryablePayment
                       ? {
-                          description: "Existe uma tentativa anterior sem confirmacao de transacao. Voce pode abrir o checkout novamente.",
                           label: "Retomar compra",
                           toneClassName: "border-sky-400/30 bg-sky-500/10 text-sky-200",
                         }
-                      : paymentMeta
-                    : participantControls.checkoutBlocked
+                      : successfulPurchasesCount > 1
+                        ? {
+                            label: `${successfulPurchasesCount} compras aprovadas`,
+                            toneClassName: "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
+                          }
+                        : highlightedPayment
+                          ? paymentMeta
+                          : participantControls.checkoutBlocked
                       ? {
-                          description:
-                            participantControls.blockReason ||
-                            "A equipe bloqueou temporariamente novas tentativas de checkout para a sua conta.",
                           label: "Checkout bloqueado",
                           toneClassName: "border-destructive/30 bg-destructive/10 text-destructive",
                         }
                       : {
-                          description: "Promocao liberada para novas entradas.",
                           label: "Disponivel",
                           toneClassName: "border-primary/30 bg-primary/10 text-primary",
                         };
                   const isBusy = isStartingCheckoutFor === promotion.id;
-                  const canStartCheckout =
-                    !isBusy &&
-                    !participantControls.checkoutBlocked &&
-                    (!highlightedPayment ||
-                      paymentState === "failed" ||
-                      (paymentState === "pending" && !hasMercadoPagoTransaction));
+                  const canStartCheckout = !isBusy && !participantControls.checkoutBlocked && !latestAnalyzingPayment;
 
                   return (
                     <article
@@ -472,16 +614,25 @@ export default function Dashboard() {
                         )}
 
                         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,6,15,0.08),rgba(5,6,15,0.88))]" />
-                        <div className="absolute left-4 right-4 top-4 flex items-start justify-between gap-3">
+                        <div className="absolute left-4 right-4 top-4 flex flex-wrap items-start justify-between gap-3">
                           <Badge className="border-white/15 bg-black/40 text-white">
                             {formatCurrency(getPromotionAmount(promotion))}
                           </Badge>
-                          <Badge className={promotionBadge.toneClassName}>{promotionBadge.label}</Badge>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge className="border-white/15 bg-black/40 text-white">
+                              {formatContestLabel(contestCode)}
+                            </Badge>
+                            <Badge className="border-white/15 bg-black/40 text-white">
+                              {packageSize} numeros
+                            </Badge>
+                            <Badge className={promotionBadge.toneClassName}>{promotionBadge.label}</Badge>
+                          </div>
                         </div>
                         <div className="absolute bottom-4 left-4 right-4">
                           <h3 className="text-2xl font-display font-semibold">{promotion.title}</h3>
                           <p className="mt-2 line-clamp-2 text-sm text-white/70">
-                            {promotion.description || "Promocao criada no backoffice e aberta para novas entradas."}
+                            {promotion.description ||
+                              "Poster digital configurado no backoffice para liberar download e participacao promocional."}
                           </p>
                         </div>
                       </div>
@@ -489,65 +640,98 @@ export default function Dashboard() {
                       <div className="space-y-4 p-5">
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Fila da promocao</p>
+                            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Conteudo liberado</p>
                             <p className="mt-2 text-lg font-semibold">
-                              {paymentState === "paid"
-                                ? "Entrada confirmada"
-                                : paymentState === "pending" && hasMercadoPagoTransaction
-                                  ? "Pagamento em analise"
-                                  : participantControls.checkoutBlocked
-                                    ? "Checkout bloqueado"
-                                  : paymentState === "pending"
-                                    ? "Checkout aguardando conclusao"
-                                  : paymentState === "failed"
-                                    ? "Nova tentativa liberada"
-                                  : "Aguardando sua compra"}
+                              {latestAnalyzingPayment
+                                ? "Pagamento em analise"
+                                : latestRetryablePayment
+                                  ? "Checkout aguardando conclusao"
+                                  : successfulPurchasesCount
+                                    ? "Poster e numeros liberados"
+                                    : participantControls.checkoutBlocked
+                                      ? "Checkout bloqueado"
+                                      : paymentState === "failed"
+                                        ? "Nova tentativa liberada"
+                                        : "Aguardando sua compra"}
                             </p>
                             <p className="mt-2 text-sm text-muted-foreground">
-                              {highlightedPayment
-                                ? paymentState === "pending" && !hasMercadoPagoTransaction
+                              {latestAnalyzingPayment
+                                ? paymentMeta?.description ?? "O Mercado Pago ainda esta processando sua cobranca."
+                                : latestRetryablePayment
                                   ? "Houve uma tentativa sem transacao confirmada. Voce pode abrir o checkout novamente."
-                                  : paymentMeta?.description
-                                : participantControls.checkoutBlocked
-                                  ? participantControls.blockReason ||
-                                    "A equipe bloqueou temporariamente novas compras para a sua conta."
-                                  : "Seu nome entra na fila somente quando o pagamento for aprovado."}
+                                  : successfulPurchasesCount
+                                    ? successfulPurchasesCount > 1
+                                      ? `${successfulPurchasesCount} compras aprovadas nesta promocao. A mais recente liberou ${assignedNumbers.length || packageSize} numeros promocionais.`
+                                      : `${assignedNumbers.length || packageSize} numeros promocionais vinculados a sua compra mais recente.`
+                                    : participantControls.checkoutBlocked
+                                      ? participantControls.blockReason ||
+                                        "A equipe bloqueou temporariamente novas compras para a sua conta."
+                                      : "A compra aprovada libera o poster em PDF e os numeros promocionais."}
                             </p>
                           </div>
 
                           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Sorteios vinculados</p>
-                            <p className="mt-2 text-lg font-semibold">{promotionDraws.length}/3</p>
+                            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Sorteio do concurso</p>
+                            <p className="mt-2 text-lg font-semibold">
+                              {upcomingDraw ? formatDrawDateLabel(upcomingDraw.draw_date) : "Aguardando agenda"}
+                            </p>
                             <p className="mt-2 text-sm text-muted-foreground">
                               {upcomingDraw
-                                ? `${getDrawSequenceLabel(upcomingDraw)} em ${formatDrawDateLabel(upcomingDraw.draw_date)}`
-                                : completedDraws
-                                  ? `${completedDraws} sorteio(s) ja executado(s) para esta promocao`
-                                  : "A equipe ainda vai escolher quando abrir o primeiro sorteio desta promocao."}
+                                ? `${getCampaignDrawLabel(upcomingDraw)} de ${formatContestLabel(contestCode)} com base nos 4 ultimos digitos do 1o premio da Federal.`
+                                : "O backoffice ainda vai abrir o sorteio deste concurso."}
                             </p>
                           </div>
                         </div>
 
-                        <Button
-                          className="w-full"
-                          disabled={!canStartCheckout}
-                          onClick={() => void handleStartCheckout(promotion)}
-                          size="lg"
-                          variant="hero"
-                        >
-                          {isBusy ? <Loader2 className="animate-spin" /> : null}
-                          {paymentState === "paid"
-                            ? "Entrada garantida"
-                            : paymentState === "pending" && hasMercadoPagoTransaction
-                              ? "Pagamento em analise"
-                              : participantControls.checkoutBlocked
-                                ? "Checkout bloqueado"
-                              : paymentState === "pending"
-                                ? "Retomar checkout"
-                              : paymentState === "failed"
-                                ? "Tentar novamente"
-                              : "Comprar promocao"}
-                        </Button>
+                        {assignedNumbers.length ? (
+                          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Seus numeros</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {assignedNumbers.map((promotionNumber) => (
+                                <Badge className="border-primary/25 bg-primary/10 text-primary" key={promotionNumber.id}>
+                                  #{formatTicketNumber(promotionNumber.ticket_number)}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Button
+                            className="w-full"
+                            disabled={!canStartCheckout}
+                            onClick={() => void handleStartCheckout(promotion)}
+                            size="lg"
+                            variant="hero"
+                          >
+                            {isBusy ? <Loader2 className="animate-spin" /> : null}
+                            {hasMercadoPagoTransaction
+                                ? "Pagamento em analise"
+                                : participantControls.checkoutBlocked
+                                  ? "Checkout bloqueado"
+                                  : latestRetryablePayment
+                                     ? "Retomar checkout"
+                                    : successfulPurchasesCount
+                                      ? "Comprar novamente"
+                                    : paymentState === "failed"
+                                      ? "Tentar novamente"
+                                      : "Comprar poster"}
+                          </Button>
+
+                          {downloadUrl ? (
+                            <Button asChild className="w-full" size="lg" variant="hero-outline">
+                              <a href={downloadUrl} rel="noreferrer" target="_blank">
+                                <Download className="h-4 w-4" />
+                                Baixar PDF
+                              </a>
+                            </Button>
+                          ) : (
+                            <Button className="w-full" disabled size="lg" variant="outline">
+                              <FileText className="h-4 w-4" />
+                              Download apos aprovacao
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </article>
                   );
@@ -555,20 +739,20 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
-                Nenhuma promocao ativa no momento. Assim que o backoffice publicar uma nova campanha, ela aparece aqui.
+                Nenhum poster ativo no momento. Assim que o backoffice publicar uma nova campanha, ela aparece aqui.
               </div>
             )}
           </section>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
             <section className="glass-card rounded-[2rem] p-6">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-2xl border border-primary/15 bg-primary/10 p-3 text-primary">
+                  <Download className="h-5 w-5" />
+                </div>
                 <div>
-                  <History className="mb-3 h-8 w-8 text-primary" />
-                  <h2 className="text-2xl font-display font-semibold">Historico de pagamentos</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    O historico mostra em qual promocao sua compra ficou registrada.
-                  </p>
+                  <h2 className="text-2xl font-display font-semibold">Downloads</h2>
+                  <p className="text-sm text-muted-foreground">Posters pagos e prontos para baixar.</p>
                 </div>
               </div>
 
@@ -576,40 +760,99 @@ export default function Dashboard() {
                 {paymentsLoading ? (
                   <div className="flex items-center gap-3 rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    Carregando seu historico de pagamentos...
+                    Carregando seus downloads...
                   </div>
-                ) : payments.length ? (
-                  payments.map((payment) => {
-                    const paymentStatusMeta = getPaymentStatusMeta(payment.status);
-                    const paymentDraw = payment.draw_id ? drawById.get(payment.draw_id) ?? null : null;
-                    const paymentPromotion = payment.promotion_id
-                      ? promotionById.get(payment.promotion_id) ?? null
-                      : null;
+                ) : downloadsReady.length ? (
+                  downloadsReady.map(({ downloadUrl, payment, promotion, numbers }) => (
+                    <div
+                      className="rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-4"
+                      key={payment.id}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-semibold">{promotion.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Liberado em {formatPaymentMoment(payment.payment_date ?? payment.created_at)}
+                          </p>
+                        </div>
+                        <Button asChild size="sm" variant="hero-outline">
+                          <a href={downloadUrl} rel="noreferrer" target="_blank">
+                            <Download className="h-4 w-4" />
+                            Baixar PDF
+                          </a>
+                        </Button>
+                      </div>
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {numbers.length} numero(s) promocional(is) vinculado(s) a esta compra.
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
+                    Nenhum poster liberado ainda. Assim que um pagamento for aprovado, o download aparece aqui.
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="glass-card rounded-[2rem] p-6">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-2xl border border-accent/20 bg-accent/10 p-3 text-accent">
+                  <Hash className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-display font-semibold">Numeros</h2>
+                  <p className="text-sm text-muted-foreground">Todos os numeros recebidos por compra, organizados pelo concurso.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {numbersLoading ? (
+                  <div className="flex items-center gap-3 rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    Carregando seus numeros...
+                  </div>
+                ) : downloadsReady.length ? (
+                  downloadsReady.map(({ contestCode, numbers, payment, promotion }) => {
+                    const upcomingDraw = drawsByContestCode.get(contestCode)?.find(isUpcomingDraw) ?? null;
 
                     return (
                       <div
-                        className="flex flex-col gap-3 rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                        key={payment.id}
+                        className="rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-4"
+                        key={`${payment.id}-numbers`}
                       >
-                        <div>
-                          <p className="font-semibold">
-                            {getPaymentReferenceLabel(payment, paymentDraw, paymentPromotion)}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatPaymentMoment(payment.payment_date ?? payment.created_at)}
-                          </p>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="font-semibold">{promotion.title}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {upcomingDraw
+                                ? `${getCampaignDrawLabel(upcomingDraw)} em ${formatDrawDateLabel(upcomingDraw.draw_date)}`
+                                : "Sorteio ainda nao agendado para este concurso."}
+                            </p>
+                          </div>
+                          <Badge className="border-white/15 bg-white/5 text-white">
+                            {numbers.length || normalizePackageSize(promotion.number_package_size)} numeros
+                          </Badge>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-sm font-medium">{formatCurrency(Number(payment.amount ?? 0))}</span>
-                          <Badge className={paymentStatusMeta.toneClassName}>{paymentStatusMeta.label}</Badge>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {numbers.length ? (
+                            numbers.map((promotionNumber) => (
+                              <Badge className="border-primary/25 bg-primary/10 text-primary" key={promotionNumber.id}>
+                                #{formatTicketNumber(promotionNumber.ticket_number)}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              Os numeros ainda estao sincronizando a partir do pagamento aprovado.
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
                   })
                 ) : (
                   <div className="rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
-                    Voce ainda nao tem pagamentos registrados.
+                    Seus numeros aparecem aqui logo apos a aprovacao do pagamento.
                   </div>
                 )}
               </div>
@@ -617,11 +860,11 @@ export default function Dashboard() {
 
             <div className="space-y-4">
               <section className="glass-card rounded-[2rem] p-6">
-                <Calendar className="mb-3 h-8 w-8 text-primary" />
-                <h2 className="text-xl font-display font-semibold">Como a fila funciona</h2>
+                <Sparkles className="mb-3 h-8 w-8 text-primary" />
+                <h2 className="text-xl font-display font-semibold">Como funciona agora</h2>
                 <p className="mt-3 text-sm text-muted-foreground">
-                  O pagamento aprovado entra na fila da promocao. Depois o backoffice escolhe essa promocao,
-                  cria um sorteio e sorteia 3 numeros unicos com base nas posicoes da fila.
+                  Compra aprovada libera o poster em PDF e gera numeros unicos entre 0001 e 9999 para o concurso.
+                  O resultado usa os 4 ultimos digitos do 1o premio da Loteria Federal.
                 </p>
               </section>
 
@@ -630,7 +873,7 @@ export default function Dashboard() {
                   <MessageCircle className="mb-3 h-8 w-8 text-primary" />
                   <h2 className="text-xl font-display font-semibold">Chat</h2>
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Converse com outros participantes e acompanhe o clima antes da live do sorteio.
+                    Entre na comunidade, fale com outros participantes e acompanhe a expectativa para a live.
                   </p>
                   <Button className="mt-4 w-full" size="lg" variant="hero-outline">
                     Abrir chat
@@ -639,12 +882,42 @@ export default function Dashboard() {
               </Link>
 
               <section className="glass-card rounded-[2rem] p-6">
-                <CreditCard className="mb-3 h-8 w-8 text-accent" />
-                <h2 className="text-xl font-display font-semibold">Compra unica por promocao</h2>
+                <ShieldCheck className="mb-3 h-8 w-8 text-accent" />
+                <h2 className="text-xl font-display font-semibold">Compra segura por concurso</h2>
                 <p className="mt-3 text-sm text-muted-foreground">
-                  Cada usuario pode ter apenas uma entrada ativa por promocao. O cadastro com CPF e data de
-                  nascimento ajuda a proteger essa regra.
+                  O cadastro com CPF e data de nascimento ajuda a manter a identidade do participante validada e a
+                  rastreabilidade administrativa de cada compra de poster.
                 </p>
+              </section>
+
+              <section className="glass-card rounded-[2rem] p-6">
+                <CreditCard className="mb-3 h-8 w-8 text-primary" />
+                <h2 className="text-xl font-display font-semibold">Compras recentes</h2>
+                <div className="mt-4 space-y-3">
+                  {payments.slice(0, 4).map((payment) => {
+                    const paymentStatusMeta = getPaymentStatusMeta(payment.status);
+                    const paymentDraw = payment.draw_id ? drawById.get(payment.draw_id) ?? null : null;
+                    const paymentPromotion =
+                      payment.promotion_id ? promotionById.get(payment.promotion_id) ?? null : null;
+
+                    return (
+                      <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3" key={payment.id}>
+                        <p className="font-medium">{getPaymentReferenceLabel(payment, paymentDraw, paymentPromotion)}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Badge className={paymentStatusMeta.toneClassName}>{paymentStatusMeta.label}</Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {formatPaymentMoment(payment.payment_date ?? payment.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!payments.length ? (
+                    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
+                      Voce ainda nao tem compras registradas.
+                    </div>
+                  ) : null}
+                </div>
               </section>
             </div>
           </div>

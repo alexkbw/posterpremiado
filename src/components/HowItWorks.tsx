@@ -1,56 +1,56 @@
 import { motion } from "framer-motion";
-import { Wallet, Shuffle, PartyPopper } from "lucide-react";
+import { Download, FileCheck2, Landmark } from "lucide-react";
 
 const steps = [
   {
-    icon: Wallet,
-    title: "1. Cadastre-se e pague",
-    description: "Crie sua conta e pague R$ 10,00 por semana via PIX ou cartão de crédito.",
+    description: "Escolha a campanha ativa, conclua o pagamento no Mercado Pago e aguarde a confirmacao.",
+    icon: FileCheck2,
+    title: "1. Compre o poster",
   },
   {
-    icon: Shuffle,
-    title: "2. Aguarde o sorteio",
-    description: "Todo sábado o montante é somado. 80% vai para os prêmios, 20% para a plataforma.",
+    description: "Pagamento aprovado libera o download do PDF e gera automaticamente seus numeros unicos.",
+    icon: Download,
+    title: "2. Receba o PDF e os numeros",
   },
   {
-    icon: PartyPopper,
-    title: "3. Ganhe prêmios!",
-    description: "3 números são sorteados. Se sua posição for sorteada, você ganha 1/3 do prêmio!",
+    description: "O sorteio usa os 4 ultimos digitos do 1o premio da Loteria Federal.",
+    icon: Landmark,
+    title: "3. Acompanhe a rodada",
   },
 ];
 
 export default function HowItWorks() {
   return (
-    <section className="py-20 bg-background">
+    <section className="bg-background py-20">
       <div className="container mx-auto px-4">
         <motion.div
+          className="mb-12 text-center"
           initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-12"
+          whileInView={{ opacity: 1, y: 0 }}
         >
-          <h2 className="text-3xl sm:text-4xl font-display font-bold mb-4">
+          <h2 className="mb-4 text-3xl font-display font-bold sm:text-4xl">
             Como <span className="text-gradient-gold">funciona</span>
           </h2>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Simples, transparente e toda semana
+          <p className="mx-auto max-w-xl text-muted-foreground">
+            Um fluxo simples para vender o poster e acompanhar a apuracao promocional sem ruído.
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-          {steps.map((step, i) => (
+        <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-3">
+          {steps.map((step, index) => (
             <motion.div
               key={step.title}
+              className="glass-card group rounded-2xl p-6 text-center transition-all duration-300 hover:glow-gold"
               initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.15 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.15 }}
-              className="glass-card rounded-2xl p-6 text-center group hover:glow-gold transition-all duration-300"
+              whileInView={{ opacity: 1, y: 0 }}
             >
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl gradient-gold mb-4 group-hover:scale-110 transition-transform">
+              <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl gradient-gold transition-transform group-hover:scale-110">
                 <step.icon className="h-7 w-7 text-primary-foreground" />
               </div>
-              <h3 className="text-lg font-display font-semibold mb-2">{step.title}</h3>
+              <h3 className="mb-2 text-lg font-display font-semibold">{step.title}</h3>
               <p className="text-sm text-muted-foreground">{step.description}</p>
             </motion.div>
           ))}
