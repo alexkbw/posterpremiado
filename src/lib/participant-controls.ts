@@ -5,15 +5,11 @@ import type { Database } from "@/integrations/supabase/types";
 export type SelfParticipantControls = {
   blockReason: string | null;
   checkoutBlocked: boolean;
-  moderator: boolean;
-  publicChatBlocked: boolean;
 };
 
 const DEFAULT_SELF_PARTICIPANT_CONTROLS: SelfParticipantControls = {
   blockReason: null,
   checkoutBlocked: false,
-  moderator: false,
-  publicChatBlocked: false,
 };
 
 export async function loadSelfParticipantControls(
@@ -30,8 +26,6 @@ export async function loadSelfParticipantControls(
   return {
     blockReason: row?.block_reason ?? null,
     checkoutBlocked: Boolean(row?.checkout_blocked),
-    moderator: Boolean(row?.moderator),
-    publicChatBlocked: Boolean(row?.public_chat_blocked),
   };
 }
 

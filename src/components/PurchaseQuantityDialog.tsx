@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getCheckoutAvailability } from "@/lib/mercado-pago";
 import { formatCurrency } from "@/lib/payments";
-import { MAX_POSTER_QUANTITY, normalizePosterQuantity } from "@/lib/posters";
+import { type DomainId, MAX_POSTER_QUANTITY, normalizePosterQuantity } from "@/lib/posters";
 import { cn } from "@/lib/utils";
 
 const PRESET_QUANTITIES = [60, 120, 250, 500];
@@ -22,7 +22,7 @@ type PurchaseQuantityDialogProps = {
   open: boolean;
   promotion: {
     description?: string | null;
-    id: string;
+    id: DomainId;
     title: string;
   } | null;
   session: Session | null;

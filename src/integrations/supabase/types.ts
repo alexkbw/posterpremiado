@@ -14,44 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      draw_participants: {
-        Row: {
-          created_at: string
-          draw_id: string
-          id: string
-          is_winner: boolean
-          position: number
-          prize_amount: number | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          draw_id: string
-          id?: string
-          is_winner?: boolean
-          position: number
-          prize_amount?: number | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          draw_id?: string
-          id?: string
-          is_winner?: boolean
-          position?: number
-          prize_amount?: number | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "draw_participants_draw_id_fkey"
-            columns: ["draw_id"]
-            isOneToOne: false
-            referencedRelation: "draws"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       draws: {
         Row: {
           created_at: string
@@ -118,51 +80,6 @@ export type Database = {
       }
       Relationships: []
       }
-      chat_reports: {
-        Row: {
-          created_at: string
-          id: string
-          public_message_id: string | null
-          report_reason: string | null
-          reported_message_body: string
-          reported_message_created_at: string | null
-          reported_user_id: string
-          reporter_id: string
-          reviewed_at: string | null
-          reviewed_by: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          public_message_id?: string | null
-          report_reason?: string | null
-          reported_message_body: string
-          reported_message_created_at?: string | null
-          reported_user_id: string
-          reporter_id: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          public_message_id?: string | null
-          report_reason?: string | null
-          reported_message_body?: string
-          reported_message_created_at?: string | null
-          reported_user_id?: string
-          reporter_id?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       private_chat_messages: {
         Row: {
           id: string
@@ -196,8 +113,6 @@ export type Database = {
           checkout_blocked: boolean
           created_at: string
           internal_notes: string | null
-          moderator: boolean
-          public_chat_blocked: boolean
           updated_at: string
           updated_by: string | null
           user_id: string
@@ -207,8 +122,6 @@ export type Database = {
           checkout_blocked?: boolean
           created_at?: string
           internal_notes?: string | null
-          moderator?: boolean
-          public_chat_blocked?: boolean
           updated_at?: string
           updated_by?: string | null
           user_id: string
@@ -218,8 +131,6 @@ export type Database = {
           checkout_blocked?: boolean
           created_at?: string
           internal_notes?: string | null
-          moderator?: boolean
-          public_chat_blocked?: boolean
           updated_at?: string
           updated_by?: string | null
           user_id?: string
@@ -304,45 +215,6 @@ export type Database = {
         }
         Relationships: []
       }
-      public_chat_messages: {
-        Row: {
-          content: string | null
-          created_at: string
-          hidden_at: string | null
-          hidden_by: string | null
-          id: string
-          is_hidden: boolean
-          message: string
-          sender_id: string | null
-          sent_at: string
-          user_id: string
-        }
-        Insert: {
-          content?: string | null
-          created_at?: string
-          hidden_at?: string | null
-          hidden_by?: string | null
-          id?: string
-          is_hidden?: boolean
-          message: string
-          sender_id?: string | null
-          sent_at?: string
-          user_id: string
-        }
-        Update: {
-          content?: string | null
-          created_at?: string
-          hidden_at?: string | null
-          hidden_by?: string | null
-          id?: string
-          is_hidden?: boolean
-          message?: string
-          sender_id?: string | null
-          sent_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       user_roles: {
         Row: {
           id: string
@@ -375,19 +247,6 @@ export type Database = {
         Returns: {
           block_reason: string | null
           checkout_blocked: boolean
-          moderator: boolean
-          public_chat_blocked: boolean
-        }[]
-      }
-      hide_public_chat_message: {
-        Args: {
-          _message_id: string
-        }
-        Returns: {
-          hidden_at: string | null
-          hidden_by: string | null
-          id: string
-          is_hidden: boolean
         }[]
       }
       has_role: {

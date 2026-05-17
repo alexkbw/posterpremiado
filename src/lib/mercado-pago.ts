@@ -1,33 +1,32 @@
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/integrations/supabase/client";
-import type { TrafficAttributionSnapshot } from "@/lib/traffic-attribution";
+import type { DomainId } from "@/lib/posters";
 
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 const SUPABASE_PUBLISHABLE_KEY =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
 
 export type CreateCheckoutPreferenceInput = {
-  attribution?: TrafficAttributionSnapshot | null;
   originUrl: string;
   payerEmail?: string | null;
   payerName?: string | null;
   posterQuantity?: number | null;
-  promotionId: string;
+  promotionId: DomainId;
   title?: string;
 };
 
 export type CheckoutAvailabilityInput = {
   posterQuantity?: number | null;
-  promotionId: string;
+  promotionId: DomainId;
 };
 
 export type CreateCheckoutPreferenceResponse = {
   checkoutUrl: string;
-  paymentRecordId: string;
+  paymentRecordId: DomainId;
   preferenceId: string;
-  promotionId?: string | null;
+  promotionId?: DomainId | null;
   promotionTitle?: string | null;
   usesRedirectBack: boolean;
 };

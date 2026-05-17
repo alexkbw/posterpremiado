@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getPromotionContestCode, normalizePackageSize } from "./posters";
+import { formatTicketNumber, getPromotionContestCode, normalizePackageSize } from "./posters";
 
 describe("normalizePackageSize", () => {
   it("preserves valid dynamic package sizes", () => {
@@ -21,10 +21,18 @@ describe("normalizePackageSize", () => {
 
 describe("getPromotionContestCode", () => {
   it("prefers the explicit contest code", () => {
-    expect(getPromotionContestCode({ contest_code: "FED-6054", id: "promo-1" })).toBe("FED-6054");
+    expect(getPromotionContestCode({ contest_code: "FED-6054", id: 1 })).toBe("FED-6054");
   });
 
   it("falls back to the promotion id when needed", () => {
-    expect(getPromotionContestCode({ contest_code: "", id: "promo-2" })).toBe("promo-2");
+    expect(getPromotionContestCode({ contest_code: "", id: 2 })).toBe("2");
+  });
+});
+
+describe("formatTicketNumber", () => {
+  it("renders promotion numbers with six digits", () => {
+    expect(formatTicketNumber(0)).toBe("000000");
+    expect(formatTicketNumber(1)).toBe("000001");
+    expect(formatTicketNumber(999999)).toBe("999999");
   });
 });

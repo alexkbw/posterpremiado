@@ -31,6 +31,12 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function readRecordId(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
 function readNullableString(value: unknown) {
   return typeof value === "string" && value ? value : null;
 }
@@ -61,36 +67,12 @@ function buildFallbackParticipantLabel(_userId: string) {
   return "Participante";
 }
 
-export function normalizePublicChatMessage(raw: unknown): ChatEntry | null {
-  const row = asRecord(raw);
-
-  if (!row) return null;
-
-  const id = readString(row.id);
-  const senderId = readString(row.user_id) || readString(row.sender_id);
-  const body = readString(row.message) || readString(row.content);
-
-  if (!id || !senderId || !body) return null;
-
-  return {
-    body,
-    createdAt: readTimestamp(row),
-    hiddenAt: readNullableString(row.hidden_at),
-    hiddenBy: readNullableString(row.hidden_by),
-    id,
-    isHidden: readBoolean(row.is_hidden),
-    read: true,
-    receiverId: null,
-    senderId,
-  };
-}
-
 export function normalizePrivateChatMessage(raw: unknown): ChatEntry | null {
   const row = asRecord(raw);
 
   if (!row) return null;
 
-  const id = readString(row.id);
+  const id = readRecordId(row.id);
   const senderId = readString(row.sender_id);
   const receiverId = readNullableString(row.receiver_id);
   const body = readString(row.message) || readString(row.content);
@@ -261,28 +243,7 @@ export async function resolveSupportReceiverId(supabase: SupabaseLikeClient, cur
 
   const adminUserIds = await loadAdminUserIds(supabase);
 
-  return adminUserIds.find((userId) => userId !== currentUserId) ?? currentUserId;
-}
-
-export async function sendPublicChatMessage(
-  supabase: SupabaseLikeClient,
-  senderId: string,
-  body: string,
-) {
-  const firstAttempt = await supabase
-    .from("public_chat_messages")
-    .insert({ message: body, user_id: senderId });
-
-  if (!firstAttempt.error) return null;
-  if (!shouldRetryLegacyChatInsert(firstAttempt.error)) {
-    return firstAttempt.error.message ?? "Erro ao enviar mensagem.";
-  }
-
-  const fallbackAttempt = await supabase
-    .from("public_chat_messages")
-    .insert({ content: body, sender_id: senderId });
-
-  return fallbackAttempt.error?.message ?? firstAttempt.error.message ?? "Erro ao enviar mensagem.";
+  return adminUserIds.find((userId) => userId !== currentUserId) ?? null;
 }
 
 export async function sendPrivateChatMessage(
@@ -293,16 +254,25 @@ export async function sendPrivateChatMessage(
 ) {
   const firstAttempt = await supabase
     .from("private_chat_messages")
-    .insert({ message: body, receiver_id: receiverId, sender_id: senderId });
+    .insert({ content: body, message: body, receiver_id: receiverId, sender_id: senderId });
 
   if (!firstAttempt.error) return null;
   if (!shouldRetryLegacyChatInsert(firstAttempt.error)) {
     return firstAttempt.error.message ?? "Erro ao enviar mensagem.";
   }
 
-  const fallbackAttempt = await supabase
+  const messageOnlyAttempt = await supabase
+    .from("private_chat_messages")
+    .insert({ message: body, receiver_id: receiverId, sender_id: senderId });
+
+  if (!messageOnlyAttempt.error) return null;
+  if (!shouldRetryLegacyChatInsert(messageOnlyAttempt.error)) {
+    return messageOnlyAttempt.error.message ?? firstAttempt.error.message ?? "Erro ao enviar mensagem.";
+  }
+
+  const contentOnlyAttempt = await supabase
     .from("private_chat_messages")
     .insert({ content: body, receiver_id: receiverId, sender_id: senderId });
 
-  return fallbackAttempt.error?.message ?? firstAttempt.error.message ?? "Erro ao enviar mensagem.";
+  return contentOnlyAttempt.error?.message ?? messageOnlyAttempt.error.message ?? firstAttempt.error.message ?? "Erro ao enviar mensagem.";
 }

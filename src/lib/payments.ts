@@ -175,7 +175,7 @@ export function formatPaymentMoment(value?: string | null) {
 }
 
 export function getPaymentReferenceLabel(
-  payment: { draw_id?: string | null; promotion_id?: string | null; week_reference?: string | null },
+  payment: { draw_id?: number | null; promotion_id?: number | null; week_reference?: string | null },
   draw?: { draw_date?: string | null } | null,
   promotion?: { title?: string | null } | null,
 ) {

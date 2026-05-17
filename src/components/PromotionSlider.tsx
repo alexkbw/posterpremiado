@@ -6,13 +6,14 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_PROMOTION_AMOUNT, formatCurrency } from "@/lib/payments";
+import type { DomainId } from "@/lib/posters";
 
 type Promotion = {
   active?: boolean | null;
   description: string | null;
   entry_amount?: number | null;
   file_url?: string | null;
-  id: string;
+  id: DomainId;
   image_url: string | null;
   is_active?: boolean | null;
   title: string;

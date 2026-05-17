@@ -1,3 +1,0 @@
--- Remote history placeholder.
--- This version already exists in the linked Supabase project and is kept here
--- only to align the local migration history with the remote migration table.

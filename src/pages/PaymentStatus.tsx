@@ -17,13 +17,13 @@ import {
   normalizeFulfillmentStatus,
   normalizePaymentStatus,
 } from "@/lib/payments";
-import { buildPosterDownloadUrl, formatTicketNumber } from "@/lib/posters";
+import { buildPosterDownloadUrl, type DomainId, formatTicketNumber } from "@/lib/posters";
 
 type AppDraw = {
   contest_code?: string | null;
   draw_date?: string | null;
-  id: string;
-  promotion_id?: string | null;
+  id: DomainId;
+  promotion_id?: DomainId | null;
   sequence_number?: number | null;
   status?: string;
 };
@@ -32,15 +32,15 @@ type AppPayment = {
   amount: number;
   contest_code?: string | null;
   created_at?: string | null;
-  draw_id?: string | null;
+  draw_id?: DomainId | null;
   fulfillment_error?: string | null;
   fulfillment_status?: string | null;
-  id: string;
+  id: DomainId;
   numbers_assigned_at?: string | null;
   payment_date?: string | null;
   payment_method?: string | null;
   poster_quantity?: number | null;
-  promotion_id?: string | null;
+  promotion_id?: DomainId | null;
   reservation_expires_at?: string | null;
   status: string;
   transaction_id?: string | null;
@@ -52,16 +52,16 @@ type Promotion = {
   entry_amount?: number | null;
   file_type?: string | null;
   file_url?: string | null;
-  id: string;
+  id: DomainId;
   number_package_size?: number | null;
   title: string;
 };
 
 type PromotionNumberRecord = {
   created_at?: string | null;
-  id: string;
-  payment_id: string;
-  promotion_id: string;
+  id: DomainId;
+  payment_id?: DomainId | null;
+  promotion_id?: DomainId | null;
   ticket_number: number;
   user_id: string;
 };
@@ -228,7 +228,7 @@ export default function PaymentStatus() {
         console.error("Error fetching paid downloads:", error);
         return [];
       }
-      return data as Array<{ promotion_id: string; file_url: string }>;
+      return data as Array<{ promotion_id: DomainId; file_url: string }>;
     },
     enabled: Boolean(user),
   });
@@ -293,7 +293,7 @@ export default function PaymentStatus() {
     searchParams.get("payment_id") ??
     searchParams.get("collection_id");
   const purchasedQuantity = payment?.poster_quantity ?? 1;
-  const fileUrl = payment?.promotion_id ? paidDownloadsMap.get(payment.promotion_id) : null;
+  const fileUrl = typeof payment?.promotion_id === "number" ? paidDownloadsMap.get(payment.promotion_id) : null;
   const downloadUrl =
     normalizedStatus === "paid" && fileUrl ? buildPosterDownloadUrl(fileUrl) : null;
   const isManualReview =

@@ -1,3 +1,5 @@
+export type DomainId = number;
+
 export type PosterPromotion = {
   active?: boolean | null;
   contest_code?: string | null;
@@ -7,7 +9,7 @@ export type PosterPromotion = {
   entry_amount?: number | null;
   file_type?: string | null;
   file_url?: string | null;
-  id: string;
+  id: DomainId;
   image_url?: string | null;
   is_active?: boolean | null;
   number_package_size?: number | null;
@@ -19,17 +21,17 @@ export type PosterPromotion = {
 export type PosterPurchase = {
   amount?: number | null;
   contest_code?: string | null;
-  id?: string | null;
+  id?: DomainId | null;
   poster_quantity?: number | null;
-  promotion_id?: string | null;
+  promotion_id?: DomainId | null;
 };
 
 export type PromotionNumberRecord = {
   contest_code?: string | null;
   created_at?: string | null;
-  id: string;
-  payment_id: string;
-  promotion_id: string;
+  id: DomainId;
+  payment_id?: DomainId | null;
+  promotion_id?: DomainId | null;
   ticket_number: number;
   user_id: string;
 };
@@ -60,14 +62,14 @@ export function normalizePosterQuantity(value?: number | string | null) {
   return Math.min(normalized, MAX_POSTER_QUANTITY);
 }
 
-export function normalizeContestCode(value?: string | null, fallback?: string | null) {
+export function normalizeContestCode(value?: string | null, fallback?: string | number | null) {
   const normalized = value?.trim();
 
   if (normalized) {
     return normalized;
   }
 
-  const normalizedFallback = fallback?.trim();
+  const normalizedFallback = fallback === null || fallback === undefined ? "" : String(fallback).trim();
   return normalizedFallback || "";
 }
 
@@ -81,16 +83,15 @@ export function getPromotionPrizeAmount(promotion?: Pick<PosterPromotion, "prize
 }
 
 export function getDrawContestCode(
-  draw?: { contest_code?: string | null; id?: string | null; promotion_id?: string | null } | null,
+  draw?: { contest_code?: string | null; id?: DomainId | null; promotion_id?: DomainId | null } | null,
 ) {
   return normalizeContestCode(draw?.contest_code, draw?.promotion_id ?? draw?.id ?? null);
 }
 
 export function getDrawPromotionId(
-  draw?: { promotion_id?: string | null } | null,
+  draw?: { promotion_id?: DomainId | null } | null,
 ) {
-  const normalized = draw?.promotion_id?.trim();
-  return normalized || "";
+  return typeof draw?.promotion_id === "number" ? draw.promotion_id : null;
 }
 
 export function getPaymentContestCode(

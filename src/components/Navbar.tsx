@@ -34,7 +34,7 @@ export default function Navbar() {
               <Link to="/chat">
                 <Button size="sm" variant="ghost">
                   <MessageCircle className="h-4 w-4" />
-                  <span className="hidden sm:inline">Chat</span>
+                  <span className="hidden sm:inline">Suporte</span>
                 </Button>
               </Link>
               <Button onClick={signOut} size="sm" variant="ghost">

@@ -39,6 +39,7 @@ import { loadParticipantIdentities } from "@/lib/chat";
 import { getDefaultSelfParticipantControls, loadSelfParticipantControls } from "@/lib/participant-controls";
 import {
   buildPosterDownloadUrl,
+  type DomainId,
   formatTicketNumber,
   getDrawContestCode,
   getDrawPromotionId,
@@ -47,7 +48,6 @@ import {
   normalizePosterQuantity,
 } from "@/lib/posters";
 import { getPublicAppOrigin, hasSecurePublicAppOrigin } from "@/lib/public-app-url";
-import { getStoredTrafficAttribution } from "@/lib/traffic-attribution";
 
 type Promotion = {
   active?: boolean | null;
@@ -58,7 +58,7 @@ type Promotion = {
   entry_amount?: number | null;
   file_type?: string | null;
   file_url?: string | null;
-  id: string;
+  id: DomainId;
   image_url?: string | null;
   is_active?: boolean | null;
   number_package_size?: number | null;
@@ -74,11 +74,11 @@ type AppDraw = {
   executed_at?: string | null;
   federal_contest?: string | null;
   federal_first_prize?: string | null;
-  id: string;
+  id: DomainId;
   official_winning_number?: number | null;
   prize_per_winner?: number | null;
   result_source?: string | null;
-  promotion_id?: string | null;
+  promotion_id?: DomainId | null;
   sequence_number?: number | null;
   status: string;
   winner_count?: number | null;
@@ -91,15 +91,15 @@ type AppPayment = {
   checkout_url?: string | null;
   contest_code?: string | null;
   created_at?: string | null;
-  draw_id?: string | null;
+  draw_id?: DomainId | null;
   fulfillment_error?: string | null;
   fulfillment_status?: string | null;
-  id: string;
+  id: DomainId;
   numbers_assigned_at?: string | null;
   payment_date?: string | null;
   payment_method?: string | null;
   poster_quantity?: number | null;
-  promotion_id?: string | null;
+  promotion_id?: DomainId | null;
   reservation_expires_at?: string | null;
   status: string;
   transaction_id?: string | null;
@@ -110,9 +110,9 @@ type AppPayment = {
 type PromotionNumberRecord = {
   contest_code?: string | null;
   created_at?: string | null;
-  id: string;
-  payment_id: string;
-  promotion_id: string;
+  id: DomainId;
+  payment_id?: DomainId | null;
+  promotion_id?: DomainId | null;
   ticket_number: number;
   user_id: string;
 };
@@ -305,7 +305,7 @@ export default function Dashboard() {
         console.error("Error fetching paid downloads:", error);
         return [];
       }
-      return data as Array<{ promotion_id: string; file_url: string }>;
+      return data as Array<{ promotion_id: DomainId; file_url: string }>;
     },
     enabled: Boolean(user),
   });
@@ -368,6 +368,8 @@ export default function Dashboard() {
     queryFn: async () => {
       const { data, error } = await getTable("promotion_numbers")
         .select("*")
+        .eq("user_id", user!.id)
+        .not("payment_id", "is", null)
         .order("ticket_number", { ascending: true });
 
       if (error) {
@@ -419,12 +421,12 @@ export default function Dashboard() {
   }, [draws]);
 
   const drawsByPromotionId = useMemo(() => {
-    const map = new Map<string, AppDraw[]>();
+    const map = new Map<DomainId, AppDraw[]>();
 
     for (const draw of draws) {
       const promotionId = getDrawPromotionId(draw);
 
-      if (!promotionId) {
+      if (promotionId === null) {
         continue;
       }
 
@@ -438,10 +440,10 @@ export default function Dashboard() {
   }, [draws]);
 
   const paymentsByPromotionId = useMemo(() => {
-    const map = new Map<string, AppPayment[]>();
+    const map = new Map<DomainId, AppPayment[]>();
 
     for (const payment of payments) {
-      if (!payment.promotion_id) {
+      if (typeof payment.promotion_id !== "number") {
         continue;
       }
 
@@ -454,9 +456,13 @@ export default function Dashboard() {
   }, [payments]);
 
   const numbersByPaymentId = useMemo(() => {
-    const map = new Map<string, PromotionNumberRecord[]>();
+    const map = new Map<DomainId, PromotionNumberRecord[]>();
 
     for (const promotionNumber of promotionNumbers) {
+      if (typeof promotionNumber.payment_id !== "number") {
+        continue;
+      }
+
       const current = map.get(promotionNumber.payment_id) ?? [];
       current.push(promotionNumber);
       map.set(promotionNumber.payment_id, current);
@@ -470,7 +476,7 @@ export default function Dashboard() {
   }, [promotionNumbers]);
 
   const nextOverallDraw = useMemo(() => {
-    return draws.find((draw) => isUpcomingDraw(draw) && Boolean(getDrawPromotionId(draw))) ?? null;
+    return draws.find((draw) => isUpcomingDraw(draw) && getDrawPromotionId(draw) !== null) ?? null;
   }, [draws]);
 
   const recentWinners = useMemo(() => {
@@ -523,7 +529,8 @@ export default function Dashboard() {
 
   const pendingPromotionNumbers = useMemo(() => {
     return promotionNumbers.filter((promotionNumber) => {
-      const promotionDraws = drawsByPromotionId.get(promotionNumber.promotion_id) ?? [];
+      const promotionDraws =
+        typeof promotionNumber.promotion_id === "number" ? drawsByPromotionId.get(promotionNumber.promotion_id) ?? [] : [];
       return !promotionDraws.some(isResolvedDraw);
     });
   }, [drawsByPromotionId, promotionNumbers]);
@@ -531,8 +538,8 @@ export default function Dashboard() {
   const downloadsReady = useMemo(() => {
     return approvedPayments
       .map((payment) => {
-        const promotion = payment.promotion_id ? promotionById.get(payment.promotion_id) ?? null : null;
-        const fileUrl = payment.promotion_id ? paidDownloadsMap.get(payment.promotion_id) : null;
+        const promotion = typeof payment.promotion_id === "number" ? promotionById.get(payment.promotion_id) ?? null : null;
+        const fileUrl = typeof payment.promotion_id === "number" ? paidDownloadsMap.get(payment.promotion_id) : null;
 
         if (!fileUrl) {
           return null;
@@ -562,7 +569,7 @@ export default function Dashboard() {
     isFetchingNumbers ||
     isFetchingParticipantControls;
   const nextOverallPromotion =
-    nextOverallDraw?.promotion_id ? promotionById.get(nextOverallDraw.promotion_id) ?? null : null;
+    typeof nextOverallDraw?.promotion_id === "number" ? promotionById.get(nextOverallDraw.promotion_id) ?? null : null;
   const nextOverallContestCode = getPromotionContestCode(nextOverallPromotion) || getDrawContestCode(nextOverallDraw);
   const nextOverallCompactDateLabel = nextOverallDraw ? formatCompactDrawDateLabel(nextOverallDraw.draw_date) : "A definir";
 
@@ -584,7 +591,6 @@ export default function Dashboard() {
       setIsStartingCheckoutFor(promotion.id);
 
       const checkout = await createCheckoutPreference(session, {
-        attribution: getStoredTrafficAttribution(),
         originUrl: getPublicAppOrigin() ?? window.location.origin,
         payerEmail: user.email,
         payerName: displayName,
@@ -628,6 +634,27 @@ export default function Dashboard() {
     }
 
     setCheckoutPromotion(promotion);
+  }
+
+  function renderPromotionMasonry(promotions: Promotion[]) {
+    const leftColumn = promotions.filter((_, index) => index % 2 === 0);
+    const rightColumn = promotions.filter((_, index) => index % 2 === 1);
+
+    return (
+      <>
+        <div className="space-y-4 lg:hidden">
+          {promotions.map((promotion) => renderPromotionCard(promotion))}
+        </div>
+        <div className="hidden gap-4 lg:grid lg:grid-cols-2 lg:items-start">
+          <div className="space-y-4">
+            {leftColumn.map((promotion) => renderPromotionCard(promotion))}
+          </div>
+          <div className="space-y-4">
+            {rightColumn.map((promotion) => renderPromotionCard(promotion))}
+          </div>
+        </div>
+      </>
+    );
   }
 
   function renderPromotionCard(promotion: Promotion) {
@@ -765,7 +792,7 @@ export default function Dashboard() {
 
     return (
       <article
-        className={`overflow-hidden rounded-[1.5rem] border border-white/10 bg-black transition-all duration-300 sm:rounded-[1.75rem] ${
+        className={`w-full overflow-hidden rounded-[1.5rem] border border-white/10 bg-black transition-all duration-300 sm:rounded-[1.75rem] ${
           isCardExpanded ? "border-primary/20 shadow-[0_18px_60px_rgba(0,0,0,0.4)]" : ""
         }`}
         key={promotion.id}
@@ -1133,9 +1160,7 @@ export default function Dashboard() {
                     Carregando posters e sorteios...
                   </div>
                 ) : ongoingPromotions.length ? (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {ongoingPromotions.map((promotion) => renderPromotionCard(promotion))}
-                  </div>
+                  renderPromotionMasonry(ongoingPromotions)
                 ) : (
                   <div className="rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-5 text-sm text-muted-foreground">
                     Nenhuma promocao em andamento no momento. Assim que o backoffice publicar uma nova campanha, ela aparece aqui.
@@ -1152,9 +1177,7 @@ export default function Dashboard() {
                     </p>
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {finishedPromotions.map((promotion) => renderPromotionCard(promotion))}
-                  </div>
+                  {renderPromotionMasonry(finishedPromotions)}
                 </section>
               ) : null}
             </div>
@@ -1192,12 +1215,12 @@ export default function Dashboard() {
               <Link className="block" to="/chat">
                 <section className="glass-card rounded-[2rem] p-6 transition-all hover:glow-gold">
                   <MessageCircle className="mb-3 h-8 w-8 text-primary" />
-                  <h2 className="text-xl font-display font-semibold">Chat</h2>
+                  <h2 className="text-xl font-display font-semibold">Suporte</h2>
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Entre na comunidade, fale com outros participantes e acompanhe a expectativa para a live.
+                    Fale diretamente com a equipe sobre cadastro, compra, numeros e sorteios.
                   </p>
                   <Button className="mt-4 w-full" size="lg" variant="hero-outline">
-                    Abrir chat
+                    Abrir suporte
                   </Button>
                 </section>
               </Link>
@@ -1220,9 +1243,9 @@ export default function Dashboard() {
                       payment.status,
                       payment.fulfillment_status,
                     );
-                    const paymentDraw = payment.draw_id ? drawById.get(payment.draw_id) ?? null : null;
+                    const paymentDraw = typeof payment.draw_id === "number" ? drawById.get(payment.draw_id) ?? null : null;
                     const paymentPromotion =
-                      payment.promotion_id ? promotionById.get(payment.promotion_id) ?? null : null;
+                      typeof payment.promotion_id === "number" ? promotionById.get(payment.promotion_id) ?? null : null;
 
                     return (
                       <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3" key={payment.id}>
@@ -1270,4 +1293,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

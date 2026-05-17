@@ -4,21 +4,21 @@ import { Calendar, Hash, Landmark } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, formatDrawDateLabel } from "@/lib/payments";
-import { getDrawContestCode, getPromotionPrizeAmount } from "@/lib/posters";
+import { type DomainId, getDrawContestCode, getPromotionPrizeAmount } from "@/lib/posters";
 
 type Draw = {
   contest_code?: string | null;
   draw_date: string;
-  id: string;
+  id: DomainId;
   prize_pool?: number | null;
-  promotion_id?: string | null;
+  promotion_id?: DomainId | null;
   sequence_number?: number | null;
   status: string;
 };
 
 type Promotion = {
   contest_code?: string | null;
-  id: string;
+  id: DomainId;
   prize_amount?: number | null;
   title: string;
 };
